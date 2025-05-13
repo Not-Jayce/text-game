@@ -1,0 +1,60 @@
+# Compiled source #
+###################
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.so
+
+# Packages #
+############
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+# Logs and databases #
+#######################
+*.log
+*.sql
+*.sqlite
+
+# OS generated files #
+######################
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Python #
+##########
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+
+# Node.js #
+###########
+node_modules/
+npm-debug.log*
+
+# Text editor files #
+#####################
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# Environment variables #
+##########################
+*.env
+*.env.local
+*.env.*.local
+
+# Save files #
+##########################
+*.dat
