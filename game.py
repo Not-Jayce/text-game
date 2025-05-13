@@ -6,13 +6,12 @@ from pydantic import BaseModel, Field
 from typing import Optional
 
 from utils.llm_client import LLMClient
-from utils.base_utils import handle_keypress
 from utils.screen import Screen
 from support.gamestate import GameState
+from support.home_base import home_base_screen
 
 class Game(BaseModel):
     screen: Screen = Field(...)
-    llm_client: LLMClient = Field(...)
     game_state: GameState = Field(...)
 
     @classmethod
@@ -20,29 +19,30 @@ class Game(BaseModel):
         if game_state is None:
             while True:
                 screen.display_options("Choose the theme for this game", ["Sci-fi", "Dungeon Crawl", "Fantasy", "Wild West", "Custom"])
-                c = handle_keypress(screen, None)
-                match c:
-                    case ord('1'):
-                        theme = "sci-fi"
-                        break
-                    case ord('2'):
-                        theme = "dungeon crawl"
-                        break
-                    case ord('3'):
-                        theme = "fantasy"
-                        break
-                    case ord('4'):
-                        theme = "wild west"
-                        break
-                    case ord('5'):
-                        theme = screen.get_input("Enter a custom theme (may produce unpredictable outputs)")
-                        break
+                c = screen.handle_keypress(game_state)
+                if c == ord('1'):
+                    theme = "sci-fi"
+                    break
+                elif c == ord('2'):
+                    theme = "dungeon crawl"
+                    break
+                elif c == ord('3'):
+                    theme = "fantasy"
+                    break
+                elif c == ord('4'):
+                    theme = "wild west"
+                    break
+                elif c == ord('5'):
+                    theme = screen.get_input("Enter a custom theme (Max. 50 characters; may produce unpredictable outputs)", 50)
+                    break
 
             llm_client.set_theme(theme)
+            game_state = GameState.create(llm_client, theme)
+
         return cls(
             screen=screen,
             llm_client=llm_client,
-            game_state=game_state if game_state is not None else GameState.create(llm_client, theme)
+            game_state=game_state
         )
 
     @classmethod
@@ -71,7 +71,7 @@ class Game(BaseModel):
         autosave_thread.start()
 
         while True:
-            self.game_state.home_base_screen()
+            home_base_screen(self.screen, self.game_state)
 
     def autosave(self):
         while True:
@@ -91,7 +91,7 @@ def main_menu(screen: Screen, llm_client: LLMClient):
     while True:
         screen.display_options("Main Menu", ["New Game", "Resume" if save_exists else ""])
 
-        c = handle_keypress(screen, None)
+        c = screen.handle_keypress(None)
         if c == ord('1'):
             # Create a new game
             screen.display("Creating new game...")
@@ -100,7 +100,7 @@ def main_menu(screen: Screen, llm_client: LLMClient):
                 break
         elif c == ord('2') and save_exists:
             # Load the game state from a file
-            screen.display(screen, "Loading game...")
+            screen.display("Loading game...")
             game = Game.load(screen, llm_client, 'save.dat')
             if game:
                 break
@@ -111,8 +111,8 @@ def main_menu(screen: Screen, llm_client: LLMClient):
 def main():
     load_dotenv("local.env")
     api_key = os.getenv("API_KEY")
-    llm_client = LLMClient.create("https://api.hyprlab.io/v1/chat/completions", api_key, None)
     screen = Screen.create()
+    llm_client = LLMClient.create(screen, "https://api.hyprlab.io/v1/chat/completions", api_key, None)
 
     game = main_menu(screen, llm_client)
     game.run()

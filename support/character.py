@@ -4,7 +4,7 @@ import time
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
-from utils.base_utils import choice, handle_keypress
+from utils.base_utils import choice
 from utils.llm_client import LLMClient
 from utils.screen import Screen
 
@@ -32,10 +32,15 @@ class Character(BaseModel):
         self.xp = 0
 
     @classmethod
-    def create(cls, llm_client: LLMClient):
+    def create(cls, llm_client: LLMClient, name: Optional[str] = None, description: Optional[str] = None):
+        if name is None:
+            name = llm_client.generate("name","character", "Generating characters", max_tokens=20)
+        if description is None:
+            description = llm_client.generate("description", "character", "Generating characters", name=name, max_tokens=100)
+            
         return cls(
-            name=llm_client.generate_name("character"),
-            description=llm_client.generate_description("character", llm_client.generate_name("character")),
+            name=name,
+            description=description,
             specialization=choice(["engineer", "scientist", "soldier"]),
             talent=choice(["polymath", "capable", "planner", None]),
             level=1,
@@ -46,16 +51,25 @@ class Character(BaseModel):
 
 
 def recruit_screen(screen: Screen, game_state: GameState):
-    new_character = recruit_character()
-    if new_character is not None:
-        screen.display(f"Recruited {new_character.name} for {game_state.recruitment_cost} {game_state.currency_name}!")
-        time.sleep(2)
-    else:
-        screen.display(f"Not enough {game_state.currency_name}.")
-        time.sleep(2)
+    while True:
+        screen.display_options(
+            f"Would you like to recruit a new character? Cost: {game_state.recruitment_cost} {game_state.currency_name}",
+            ["Yes", "No"])
+        
+        c = screen.handle_keypress(game_state)
+        if c == ord('y') or c == ord('Y') or c == ord('1'):
+            new_character = recruit_character(game_state)
+            if new_character is not None:
+                screen.display(f"Recruited {new_character.name} for {game_state.recruitment_cost} {game_state.currency_name}!")
+                time.sleep(2)
+            else:
+                screen.display(f"Not enough {game_state.currency_name}.")
+                time.sleep(2)
+        elif c == ord('n') or c == ord('N') or c == ord('2'):
+            break
 
 
-def recruit_character(screen: Screen, game_state: GameState):
+def recruit_character(game_state: GameState):
     if game_state.currency >= game_state.recruitment_cost:
         new_character = Character.create(game_state.llm_client)
         game_state.characters.append(new_character)
@@ -75,23 +89,23 @@ def view_characters_screen(screen: Screen, game_state: GameState):
 
         screen.add_new_line("Select a character to view details or 'b' to return to the home base.")
 
-        c = handle_keypress(screen)
+        c = screen.handle_keypress(game_state)
         if c == ord('b'):
             break
         elif c >= ord('1') and c <= ord(str(len(game_state.characters))):
             character_index = c - ord('1')
-            full_character_screen(screen, game_state.characters[character_index])
+            full_character_screen(screen, game_state, game_state.characters[character_index])
 
 
-def full_character_screen(screen: Screen, character: Character):
+def full_character_screen(screen: Screen, game_state: GameState, character: Character):
     screen.display(f"Name: {character.name}",
                    f"Description: {character.description}",
                    f"Specialization: {character.specialization}",
                    f"Talent: {character.talent if character.talent else 'None'}",
                    f"Level: {character.level}",
                    f"XP: {character.xp}/{character.level * 10}",
-                   f"HP: {character.hp}",
+                   f"HP: {character.hp}/{character.level}",
                    f"Gear: {', '.join(character.gear) if character.gear else 'None'}",
                    "Press any key to return to character list.")
     
-    handle_keypress(screen)
+    screen.handle_keypress(game_state)
