@@ -19,7 +19,7 @@ class Event(BaseModel):
     def create(cls, game_state: GameState, region: Region, characters: List[Character]):
         event_type = choice(["combat", "exploration", "interaction"])
         description, prompt = game_state.llm_client.generate("event", return_prompt=True, subject_type=event_type,
-                                                  region=region.name, characters=characters, loading_text="Generating event")
+                                                  region=region.name, characters=', '.join([char.name for char in characters]), load_desc="Generating event", max_tokens=400)
         return cls(type=event_type, prompt=prompt, description=description, outcome=None)
 
     def resolve(self, game_state: GameState):

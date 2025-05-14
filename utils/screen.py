@@ -1,33 +1,73 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 from typing import List, Optional
 import curses, time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from support.gamestate import GameState
+import textwrap
 
 class Screen(BaseModel):
-    stdscr: curses.window = Field(...)
+    stdscr: Optional[curses.window] = Field(None)
+    width: int = Field(default=70)
+    height: int = Field(default=10)
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if 'stdscr' in state:
+            del state['stdscr']
+        return state
+    
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.__dict__["stdscr"] = curses.initscr()
+        curses.noecho()
+        curses.cbreak()
+        curses.curs_set(0)
+        self.stdscr.keypad(True)
+    
     class Config:
         arbitrary_types_allowed = True
-        json_encoders = {
-            curses.window: ""
-        }
 
     @classmethod
-    def create(cls):
+    def create(cls, width: Optional[int] = None):
         """
         Creates a new Screen instance.
+
+        :param width: The width of the screen (defaults to full terminal width).
+        :return: A new Screen instance.
         """
         stdscr = curses.initscr()
+        width = stdscr.getmaxyx()[1] if width is None else min(width, curses.COLS)
+        height = stdscr.getmaxyx()[0]
         curses.noecho()
         curses.cbreak()
         curses.curs_set(0)
         stdscr.keypad(True)
-        return cls(stdscr=stdscr)
+        return cls(stdscr=stdscr, width=width, height=height)
+    
+    def wrap_text(self, text: str|List[str], *args:str) -> List[str]:
+        """
+        Wraps the given text to fit within the specified width and splits it into lines.
 
-    def display(self, text: str, *args: List[str], fromline: int = 0, clear: bool = True):
+        :param text: The text to wrap. Can be a single string or a list of strings.
+        :param args: Additional strings to wrap and include.
+        :return: A list of wrapped lines.
+        """
+        if isinstance(text, str):
+            text_lines = text.splitlines() or ['']
+            [text_lines.extend(arg.splitlines()) for arg in args]
+        else:
+            text_lines = []
+            [text_lines.extend(line.splitlines()) for line in text]
+            [text_lines.extend(arg.splitlines()) for arg in args]
+
+        new_text = []
+        [new_text.extend(textwrap.wrap(line, width=self.width, replace_whitespace=False, drop_whitespace=False) or [""]) for line in text_lines]
+
+        return new_text
+
+    def display(self, text: str, *args: str, fromline: int = 0, clear: bool = True):
         """
         Displays a simple text message on the screen.
 
@@ -39,9 +79,7 @@ class Screen(BaseModel):
             self.stdscr.clear()
 
         # Get each line of the text including any additional lines passed in args
-        text_lines = text.split('\n')
-        for arg in args:
-            text_lines.extend(arg.split('\n'))
+        text_lines = self.wrap_text(text, *args)
 
         for i, line in enumerate(text_lines):
             self.stdscr.addstr(i+fromline, 0, line)
@@ -61,7 +99,7 @@ class Screen(BaseModel):
             self.stdscr.clear()
 
         if description:
-            desc_lines = description.split("\n")
+            desc_lines = self.wrap_text(description)
             for desc_line in desc_lines:
                 self.stdscr.addstr(line_modifier, 0, desc_line)
                 line_modifier += 1
@@ -72,7 +110,7 @@ class Screen(BaseModel):
 
         for _, option in enumerate(options):
             if option:
-                option_list = option.split("\n")
+                option_list = self.wrap_text(option)
                 for j, opt in enumerate(option_list):
                     if j == 0:
                         self.stdscr.addstr(line_modifier, 0, f"{option_num}. {opt}")
@@ -91,7 +129,7 @@ class Screen(BaseModel):
 
     def update_line(self, line: str, row: int):
         """
-        Updates a single line of text in a specific row on the screen.
+        Updates a single line of text in a specific row on the screen. This won't wrap.
 
         :param line: The text to add.
         :param row: The row number to add the text to.
@@ -99,16 +137,26 @@ class Screen(BaseModel):
         self.stdscr.addstr(row, 0, line)
         self.stdscr.refresh()
 
-    def add_new_line(self, line: str, gap: int = 0):
+    def add_new_line(self, line: str, gap: int = 0, wrap: bool = True):
         """
-        Adds a new line of text to the next available row on the screen.
+        Adds a new line of text to the next available row on the screen. This will wrap by default.
 
         :param line: The text to add.
+        :param gap: The number of lines to skip before adding the new line.
+        :param wrap: Whether to wrap the text to fit within the screen width.
         """
         y, x = self.stdscr.getyx()
         y += gap
 
-        self.stdscr.addstr(y + 1, 0, line)
+        if wrap:
+            lines = self.wrap_text(line)
+        else:
+            lines = [line]
+
+        for line in lines:
+            self.stdscr.addstr(y+gap+1, 0, line)
+            y += 1
+
         self.stdscr.refresh()
     
     def temp_display(self, duration: int, text: str, *args: List[str]):

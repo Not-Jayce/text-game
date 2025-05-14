@@ -1,13 +1,14 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
-import pickle
+import pickle, random, logging
 
 from support.region import Region
+from support.location import Location
 from support.character import Character
 from utils.llm_client import LLMClient
 
 class GameState(BaseModel):
-    llm_client: LLMClient = Field(...)
+    llm_client: Optional[LLMClient] = Field(None)
     theme: str = Field(...)
     currency: int = Field(10)
     currency_name: str = Field("currency")
@@ -18,23 +19,50 @@ class GameState(BaseModel):
 
     @classmethod
     def create(cls, llm_client: LLMClient, theme: str):
+        """
+        Creates a new game state with the given LLM client and theme.
+        Generates characters, regions, and locations using the LLM client.
+
+        :param llm_client: The LLM client to use for generating game content.
+        :param theme: The theme for the game.
+        :return: A new GameState instance.
+        """
         llm_client.set_theme(theme)
         currency_name = llm_client.custom_generate(f"Create a unique name for a currency in a {theme} setting.\
                                                    Reply with just the name and no additional formatting.",
                                                    max_tokens=5, load_desc="Generating currency name")
         
         character_names = llm_client.multi_generate(3, "name", "character", "Generating character names", max_tokens=20)
-        character_descriptions = llm_client.multi_generate(3, "description", "character", "Generating character descriptions",
-                                                           name=character_names, max_tokens=100)
+        character_specializations = llm_client.multi_generate(3, "specialization", "character", "Generating character specializations")
+        character_descriptions = llm_client.multi_generate(3, "specialized_description", "character", "Generating character descriptions",
+                                                           name=character_names, specialization=character_specializations, max_tokens=100)
         
         region_names = llm_client.multi_generate(5, "name", "region", "Generating region names", max_tokens=20)
         region_descriptions = llm_client.multi_generate(5, "description", "region", "Generating region descriptions",
                                                        name=region_names, max_tokens=100)
 
-        characters = [Character.create(llm_client, character_names[i], character_descriptions[i]) for i in range(3)]
+        characters = [Character.create(llm_client, character_names[i], character_specializations[i], character_descriptions[i]) for i in range(3)]
         regions = [Region.create(llm_client, region_names[i], region_descriptions[i]) for i in range(5)]
-        for region in regions:
-            region.generate_locations(llm_client)
+
+        num_locations = [random.randint(2, 5) for _ in range(len(regions))]
+        total_locations = sum(num_locations)
+
+        location_names = llm_client.multi_generate(total_locations, "name", "location", "Generating location names", max_tokens=20)
+        location_descriptions = llm_client.multi_generate(total_locations, "description", "location", "Generating location descriptions",
+                                                           name=location_names, max_tokens=100)
+
+        # Split the location names and descriptions into batches for each region
+        location_index = 0
+        location_names_batches = []
+        location_descriptions_batches = []
+        for num in num_locations:
+            location_names_batches.append(location_names[location_index:location_index + num])
+            location_descriptions_batches.append(location_descriptions[location_index:location_index + num])
+            location_index += num
+
+        for i, region in enumerate(regions):
+            region.create_locations(llm_client, [Location.create(llm_client, region.name, i+1, location_names_batches[i][j],
+                                                 location_descriptions_batches[i][j]) for j in range(num_locations[i])])
 
         return cls(
             llm_client=llm_client,
@@ -46,16 +74,24 @@ class GameState(BaseModel):
         )
 
     @classmethod
-    def load(cls, llm_client: LLMClient, data):
-        game_state = cls.create(llm_client, llm_client.theme)
-        game_state_data = pickle.loads(data)
-        for key, value in game_state_data.items():
-            setattr(game_state, key, value)
+    def load(cls, screen, data: bytes):
+        try:
+            game_state: GameState = pickle.loads(data)
+            game_state.llm_client.screen = screen
+            logging.info("Game state loaded successfully.")
+        except EOFError:
+            logging.error("Error loading game state: File is empty or corrupted.")
+        except Exception as e:
+            logging.error(f"Error loading game state: {e}")
         return game_state
     
     def save(self):
-        with open('save.dat', 'wb') as f:
-            f.write(self.model_dump()) #pickle.dumps
+        try:
+            with open('save.dat', 'wb') as f:
+                f.write(pickle.dumps(self))
+            logging.info("Game state saved successfully.")
+        except Exception as e:
+            logging.error(f"Error saving game state: {e}")
 
     def set_theme(self, theme: str):
         self.theme = theme

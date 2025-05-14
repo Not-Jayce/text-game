@@ -11,20 +11,19 @@ def explore_screen(screen: Screen, game_state: GameState):
         if c >= ord('1') and c <= ord(str(len(game_state.regions))):
             region_index = c - ord('1')
             game_state.current_region = game_state.regions[region_index]
-            character_select_screen()
+            character_select_screen(screen, game_state)
         elif c == ord('b'):
             break
+
 
 def character_select_screen(screen: Screen, game_state: GameState):
     selected_characters = []
     while True:
         screen.display(f"Exploring {game_state.current_region.name}",
-                    "Characters: "+", ".join([character.name for character in game_state.characters]),
                     game_state.current_region.description)
         
         screen.display_options(
-            f"Select up to 3 characters to explore with (1-{len(game_state.characters)}),\
-                then 'enter' to continue or 'b' to return:",
+            f"Select up to 3 characters to explore with (1-{len(game_state.characters)}) then 'enter' to continue or 'b' to return:",
             [character.name+(" (selected)"*(character in selected_characters)) for character in game_state.characters],
             clear=False, fromline = screen.get_line_count() + 1)
 
@@ -38,8 +37,14 @@ def character_select_screen(screen: Screen, game_state: GameState):
             elif len(selected_characters) < 3:
                 selected_characters.append(character)
 
-        elif c == ord('\n'):
+        elif c == ord('b'):
+            explore = False
             break
 
-    event = Event.create(game_state, game_state.current_region, selected_characters)
-    event_screen(event)
+        elif c == ord('\n'):
+            explore = True
+            break
+
+    if explore:
+        event = Event.create(game_state, game_state.current_region, selected_characters)
+        event_screen(screen, event, game_state)

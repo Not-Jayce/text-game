@@ -32,17 +32,19 @@ class Character(BaseModel):
         self.xp = 0
 
     @classmethod
-    def create(cls, llm_client: LLMClient, name: Optional[str] = None, description: Optional[str] = None):
+    def create(cls, llm_client: LLMClient, name: Optional[str] = None, specialization: Optional[str] = None, description: Optional[str] = None):
         if name is None:
             name = llm_client.generate("name","character", "Generating characters", max_tokens=20)
+        if specialization is None:
+            specialization = llm_client.generate("specialization", "character", "Generating characters", max_tokens=20)
         if description is None:
             description = llm_client.generate("description", "character", "Generating characters", name=name, max_tokens=100)
             
         return cls(
             name=name,
             description=description,
-            specialization=choice(["engineer", "scientist", "soldier"]),
-            talent=choice(["polymath", "capable", "planner", None]),
+            specialization=specialization,
+            talent=choice(["polymath", "capable", "good planner", None]),
             level=1,
             xp=0,
             hp=1,
