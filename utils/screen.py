@@ -20,11 +20,12 @@ class Screen(BaseModel):
     
     def __setstate__(self, state):
         self.__dict__.update(state)
-        self.__dict__["stdscr"] = curses.initscr()
+        setattr(self, "stdscr", curses.initscr())
         curses.noecho()
         curses.cbreak()
         curses.curs_set(0)
-        self.stdscr.keypad(True)
+        if self.stdscr is not None:
+            self.stdscr.keypad(True)
     
     class Config:
         arbitrary_types_allowed = True
@@ -75,15 +76,16 @@ class Screen(BaseModel):
         :param fromline: The line number to start displaying the text from.
         :param args: Additional lines of text to display.
         """
-        if clear:
-            self.stdscr.clear()
+        if self.stdscr is not None:
+            if clear:
+                self.stdscr.clear()
 
-        # Get each line of the text including any additional lines passed in args
-        text_lines = self.wrap_text(text, *args)
+            # Get each line of the text including any additional lines passed in args
+            text_lines = self.wrap_text(text, *args)
 
-        for i, line in enumerate(text_lines):
-            self.stdscr.addstr(i+fromline, 0, line)
-        self.stdscr.refresh()
+            for i, line in enumerate(text_lines):
+                self.stdscr.addstr(i+fromline, 0, line)
+            self.stdscr.refresh()
 
     def display_options(self, description: str = "", options: List[str] = [], fromline: int = 0, clear: bool = True):
         """
@@ -93,39 +95,41 @@ class Screen(BaseModel):
         :param options: A list of options to display.
         :param fromline: The line number to start displaying the options from.
         """
-        line_modifier = fromline
-        option_num = 1
-        if clear:
-            self.stdscr.clear()
+        if self.stdscr is not None:
+            line_modifier = fromline
+            option_num = 1
+            if clear:
+                self.stdscr.clear()
 
-        if description:
-            desc_lines = self.wrap_text(description)
-            for desc_line in desc_lines:
-                self.stdscr.addstr(line_modifier, 0, desc_line)
+            if description:
+                desc_lines = self.wrap_text(description)
+                for desc_line in desc_lines:
+                    self.stdscr.addstr(line_modifier, 0, desc_line)
+                    line_modifier += 1
+                
                 line_modifier += 1
-            
-            line_modifier += 1
-            self.stdscr.addstr(line_modifier, 0, "Options:")
-            line_modifier += 1
+                self.stdscr.addstr(line_modifier, 0, "Options:")
+                line_modifier += 1
 
-        for _, option in enumerate(options):
-            if option:
-                option_list = self.wrap_text(option)
-                for j, opt in enumerate(option_list):
-                    if j == 0:
-                        self.stdscr.addstr(line_modifier, 0, f"{option_num}. {opt}")
-                        line_modifier += 1
-                        option_num += 1
-                    else:
-                        self.stdscr.addstr(line_modifier, 2, opt)
-                        line_modifier += 1
+            for _, option in enumerate(options):
+                if option:
+                    option_list = self.wrap_text(option)
+                    for j, opt in enumerate(option_list):
+                        if j == 0:
+                            self.stdscr.addstr(line_modifier, 0, f"{option_num}. {opt}")
+                            line_modifier += 1
+                            option_num += 1
+                        else:
+                            self.stdscr.addstr(line_modifier, 2, opt)
+                            line_modifier += 1
 
-        self.stdscr.refresh()
+            self.stdscr.refresh()
 
     def clear(self):
         """Clears the screen."""
-        self.stdscr.clear()
-        self.stdscr.refresh()
+        if self.stdscr is not None:
+            self.stdscr.clear()
+            self.stdscr.refresh()
 
     def update_line(self, line: str, row: int):
         """
@@ -134,8 +138,9 @@ class Screen(BaseModel):
         :param line: The text to add.
         :param row: The row number to add the text to.
         """
-        self.stdscr.addstr(row, 0, line)
-        self.stdscr.refresh()
+        if self.stdscr is not None:
+            self.stdscr.addstr(row, 0, line)
+            self.stdscr.refresh()
 
     def add_new_line(self, line: str, gap: int = 0, wrap: bool = True):
         """
@@ -145,21 +150,22 @@ class Screen(BaseModel):
         :param gap: The number of lines to skip before adding the new line.
         :param wrap: Whether to wrap the text to fit within the screen width.
         """
-        y, x = self.stdscr.getyx()
-        y += gap
+        if self.stdscr is not None:
+            y, x = self.stdscr.getyx()
+            y += gap
 
-        if wrap:
-            lines = self.wrap_text(line)
-        else:
-            lines = [line]
+            if wrap:
+                lines = self.wrap_text(line)
+            else:
+                lines = [line]
 
-        for line in lines:
-            self.stdscr.addstr(y+gap+1, 0, line)
-            y += 1
+            for line in lines:
+                self.stdscr.addstr(y+gap+1, 0, line)
+                y += 1
 
-        self.stdscr.refresh()
+            self.stdscr.refresh()
     
-    def temp_display(self, duration: int, text: str, *args: List[str]):
+    def temp_display(self, duration: int, text: str, *args: str):
         """
         Temporarily displays a message on the screen for a specified duration then goes back to the previous display.
 
@@ -167,13 +173,14 @@ class Screen(BaseModel):
         :param text: The text to display.
         :param args: Additional lines of text to display.
         """
-        current_display = self.stdscr.instr(0, 0).decode('utf-8').strip()
-        self.display(text, *args)
+        if self.stdscr is not None:
+            current_display = self.stdscr.instr(0, 0).decode('utf-8').strip()
+            self.display(text, *args)
 
-        time.sleep(duration)
+            time.sleep(duration)
 
-        self.clear()
-        self.stdscr.addstr(0, 0, current_display)
+            self.clear()
+            self.stdscr.addstr(0, 0, current_display)
 
     def get_line_count(self) -> int:
         """
@@ -181,10 +188,12 @@ class Screen(BaseModel):
 
         :return: The number of lines displayed.
         """
-        y, _ = self.stdscr.getyx()
-        return y+1
+        if self.stdscr is not None:
+            y, _ = self.stdscr.getyx()
+            return y+1
+        return 0
 
-    def handle_keypress(self, game_state: "GameState" = None):
+    def handle_keypress(self, game_state: "GameState|None" = None):
         """
         Handles keypress events in the curses window.\\
         If 'q' is pressed, it will save the game state and exit.\\
@@ -194,20 +203,20 @@ class Screen(BaseModel):
         :param game_state: The current game state object.
         :return: The key pressed by the user, unless otherwise handled.
         """
+        if self.stdscr is not None:
+            c = self.stdscr.getch()
 
-        c = self.stdscr.getch()
-
-        if c == ord('q'):
-            if game_state is not None: 
-                self.display("Quitting...", "Saving game...")
-                game_state.save()
-                self.temp_display(2, "Quitting...", "Saved game.")
+            if c == ord('q'):
+                if game_state is not None: 
+                    self.display("Quitting...", "Saving game...")
+                    game_state.save()
+                    self.temp_display(2, "Quitting...", "Saved game.")
+                else:
+                    self.temp_display(2, "Quitting...")
+                exit(0)
+            
             else:
-                self.temp_display(2, "Quitting...")
-            exit(0)
-        
-        else:
-            return c
+                return c
 
     def get_input(self, prompt: str, charlim: Optional[int] = None) -> str:
         """
@@ -216,29 +225,31 @@ class Screen(BaseModel):
         :param prompt: The prompt to display.
         :return: The user input.
         """
-        self.stdscr.clear()
-        self.stdscr.addstr(0, 0, prompt)
-        self.stdscr.addstr(1, 0, "Input: ")
-        self.stdscr.refresh()
-        user_input = ""
-        while True:
-            char = self.stdscr.get_wch()
-            if char == '\n':  # Enter key
-                break
-            elif char == '\b':  # Backspace key
-                if len(user_input) > 0:
-                    user_input = user_input[:-1]
-                    y, x = self.stdscr.getyx()
-                    self.stdscr.addstr(y, x-1, " ")
-                    if x == 0:
-                        y -= 1
-                        prev_line = self.stdscr.instr(y - 1, 0).decode('utf-8').rstrip()
-                        x = len(prev_line)
-                    self.stdscr.move(y, x-1)
-            elif charlim is None or len(user_input) < charlim:  # Limit input length to 50 characters
-                curses.echo()
-                user_input += char
-                self.stdscr.addstr(char)
-                curses.noecho()
-        curses.noecho()
-        return user_input
+        if self.stdscr is not None:
+            self.stdscr.clear()
+            self.stdscr.addstr(0, 0, prompt)
+            self.stdscr.addstr(1, 0, "Input: ")
+            self.stdscr.refresh()
+            user_input = ""
+            while True:
+                char = self.stdscr.get_wch()
+                if char == '\n':  # Enter key
+                    break
+                elif char == '\b':  # Backspace key
+                    if len(user_input) > 0:
+                        user_input = user_input[:-1]
+                        y, x = self.stdscr.getyx()
+                        self.stdscr.addstr(y, x-1, " ")
+                        if x == 0:
+                            y -= 1
+                            prev_line = self.stdscr.instr(y - 1, 0).decode('utf-8').rstrip()
+                            x = len(prev_line)
+                        self.stdscr.move(y, x-1)
+                elif charlim is None or len(user_input) < charlim:  # Limit input length to 50 characters
+                    curses.echo()
+                    user_input += str(char)
+                    self.stdscr.addstr(str(char))
+                    curses.noecho()
+            curses.noecho()
+            return user_input
+        return ""

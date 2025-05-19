@@ -31,11 +31,16 @@ class Game(BaseModel):
     def create(cls, screen: Screen, game_state: Optional[GameState] = None):
         api_key = os.getenv("API_KEY")
         api_url = os.getenv("API_URL")
+        if not api_key or not api_url:
+            screen.temp_display(2, "Error: API key or URL not found in environment variables.")
+            logging.error("Error: API key or URL not found in environment variables.")
+            time.sleep(2)
+            return None
         llm_client = LLMClient.create(api_url, api_key, screen, None)
 
         if game_state is None:
             while True:
-                screen.display_options("Choose the theme for this game", ["Space Exploration", "Dungeon Crawl", "Fantasy", "Wild West", "Custom"])
+                screen.display_options("Choose the theme for this game", ["Space Exploration", "Dungeon Crawl", "Fantasy", "Wild West", "Custom (Warning: May cause unpredictable output)"])
                 c = screen.handle_keypress(game_state)
                 if c == ord('1'):
                     theme = "sci-fi"
@@ -50,11 +55,13 @@ class Game(BaseModel):
                     theme = "wild west"
                     break
                 elif c == ord('5'):
-                    theme = screen.get_input("Enter a custom theme (Max. 50 characters; may produce unpredictable outputs)", 50)
+                    theme = screen.get_input("Enter a custom theme (Max. 50 characters)", 50)
                     break
 
             game_state = GameState.create(llm_client, theme)
-        game_state.llm_client.set_theme(game_state.theme)
+
+        if game_state.llm_client:
+            game_state.llm_client.set_theme(game_state.theme)
 
         return cls(
             screen=screen,

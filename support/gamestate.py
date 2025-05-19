@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
-import pickle, random, logging
+import pickle, random, logging, os, time
 
 from support.region import Region
 from support.location import Location
@@ -71,12 +71,25 @@ class GameState(BaseModel):
             current_region=None,
             theme=theme,
             currency_name=currency_name,
+            currency=10,
+            recruitment_cost=10
         )
 
     @classmethod
     def load(cls, screen, data: bytes):
         try:
             game_state: GameState = pickle.loads(data)
+
+            if not game_state.llm_client:
+                api_key = os.getenv("API_KEY")
+                api_url = os.getenv("API_URL")
+                if not api_key or not api_url:
+                    screen.temp_display(2, "Error: API key or URL not found in environment variables.")
+                    logging.error("Error: API key or URL not found in environment variables.")
+                    time.sleep(2)
+                    return None
+                game_state.llm_client = LLMClient.create(screen, game_state.theme)
+
             game_state.llm_client.screen = screen
             logging.info("Game state loaded successfully.")
         except EOFError:
@@ -95,4 +108,7 @@ class GameState(BaseModel):
 
     def set_theme(self, theme: str):
         self.theme = theme
-        self.llm_client.set_theme(theme)
+        if self.llm_client:
+            self.llm_client.set_theme(theme)
+        else:
+            logging.error("LLM client is not set. Cannot set theme.")

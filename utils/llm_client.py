@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Callable
 import requests, threading
 import random, time
 import logging
@@ -18,7 +18,7 @@ class LLMClient(BaseModel):
     prompts: Prompts = Field(...)
 
     @classmethod
-    def create(cls, api_url: str, api_key: str, screen: Screen = None, theme: str = None):
+    def create(cls, api_url: str, api_key: str, screen: Optional[Screen] = None, theme: Optional[str] = None):
         prompts = Prompts()
         return cls(screen=screen, prompts=prompts, api_url=api_url, api_key=api_key, theme=theme)
     
@@ -40,14 +40,15 @@ class LLMClient(BaseModel):
         thread.start()
 
         # Display a spinning wheel loading animation while the text is being generated
-        loading_chars = ['/', '-', '\\', '|']
-        i = 0
-        start_time = time.time()
-        while thread.is_alive():
-            if time.time() - start_time > 0:
-                self.screen.display(f"{loading_text}... " + loading_chars[i])
-                i = (i + 1) % len(loading_chars)
-                time.sleep(0.2)
+        if self.screen:
+            loading_chars = ['/', '-', '\\', '|']
+            i = 0
+            start_time = time.time()
+            while thread.is_alive():
+                if time.time() - start_time > 0:
+                    self.screen.display(f"{loading_text}... " + loading_chars[i])
+                    i = (i + 1) % len(loading_chars)
+                    time.sleep(0.2)
 
         # Return the generated text
         return text[0] if text else ""
@@ -86,7 +87,10 @@ class LLMClient(BaseModel):
                 time.sleep(2 ** attempt)  # Exponential backoff
                 continue
             else:
+                logging.error(f"LLM API returned error: {response.status_code} - {response.text}")
                 raise Exception(f"LLM Response Error: {response.status_code} - {response.text}")
+        logging.error(f"LLM API failed after {retries} attempts.")
+        raise Exception(f"LLM API failed after {retries} attempts.")
             
     def set_theme(self, theme: str):
         """
@@ -94,7 +98,7 @@ class LLMClient(BaseModel):
         """
         self.theme = theme
 
-    def generate(self, gen_type:str, subject_type: str = "", load_desc: str = "", max_tokens: int = 200, return_prompt: bool = False, **kwargs) -> str|tuple[str, str]:
+    def generate(self, gen_type:str, subject_type: str = "", load_desc: str = "", max_tokens: int = 200, return_prompt: bool = False, **kwargs: Optional[str|list[str]]) -> str|tuple[str, str]:
         """
         Generate content with the LLM based on the type and subject.
 
@@ -118,16 +122,15 @@ class LLMClient(BaseModel):
         else:
             return gen_text
         
-    def multi_generate(self, gen_count: int, gen_type: str, subject_type: str = "", load_desc: str = "", max_tokens: int = 200, **kwargs) -> list[str]:
+    def multi_generate(self, gen_count: int, gen_type: str, subject_type: str = "", load_desc: str = "", max_tokens: int = 200, **kwargs: Optional[str|list[str]]) -> list[str]:
         """
         Use multi-threading to generate multiple pieces of content with  the LLM using the same attributes.
         """
-        threads = []
         results = []
 
         def generate_text(i):
-            new_kwargs = {key: value[i] if isinstance(value, list) and len(value) == gen_count else value for key, value in kwargs.items()}
-            text = self.generate(gen_type, subject_type, load_desc, max_tokens, **new_kwargs)
+            new_kwargs: dict[str,Optional[str|list[str]]] = {key: value[i] if isinstance(value, list) and len(value) == gen_count else value for key, value in kwargs.items()}
+            text = self.generate(gen_type, subject_type, load_desc, max_tokens, return_prompt=False, **new_kwargs)
             if text:
                 results.append(text)
             else:
@@ -140,6 +143,12 @@ class LLMClient(BaseModel):
             group_size = min(8, remaining)
             group_counts.append(group_size)
             remaining -= group_size
+
+        def kwargs_dict(idx: int) -> dict[str, Optional[str|list[str]]]:
+            """
+            Create a dictionary of keyword arguments for the generate function.
+            """
+            return {key: value[idx] if isinstance(value, list) and len(value) == gen_count else value for key, value in kwargs.items()}
 
         # Generate the text in groups of up to 8 to prevent overwhelming the API.
         for gen_group in group_counts:
@@ -154,8 +163,8 @@ class LLMClient(BaseModel):
                             subject_type,
                             load_desc,
                             max_tokens,
-                            **{key: value[idx] if isinstance(value, list) and len(value) == gen_count else value
-                               for key, value in kwargs.items()}
+                            return_prompt=False,
+                            **kwargs_dict(idx)
                         )
                     )
                 )
