@@ -9,6 +9,7 @@ from typing import Optional
 
 from utils.llm_client import LLMClient
 from utils.screen import Screen
+from utils.base_utils import file_browser
 from support.gamestate import GameState
 from support.home_base import home_base_screen
 
@@ -26,9 +27,10 @@ logging.info("Logging initialized.")
 class Game(BaseModel):
     screen: Screen = Field(...)
     game_state: GameState = Field(...)
+    filename: Optional[str] = Field(None)
 
     @classmethod
-    def create(cls, screen: Screen, game_state: Optional[GameState] = None):
+    def create(cls, screen: Screen, game_state: Optional[GameState] = None, filename: Optional[str] = None):
         api_key = os.getenv("API_KEY")
         api_url = os.getenv("API_URL")
         if not api_key or not api_url:
@@ -65,7 +67,8 @@ class Game(BaseModel):
 
         return cls(
             screen=screen,
-            game_state=game_state
+            game_state=game_state,
+            filename=filename
         )
 
     @classmethod
@@ -74,7 +77,7 @@ class Game(BaseModel):
         try:
             with open(filename, 'rb') as f:
                 game_state = GameState.load(screen, f.read())
-                return cls.create(screen, game_state)
+                return cls.create(screen, game_state, filename)
         except FileNotFoundError:
             screen.display("Error loading game: Save file not found.")
             logging.error(f"Error loading game: Save file not found.")
@@ -103,33 +106,30 @@ class Game(BaseModel):
                 logging.error(f"Error during autosave: {e}")
             time.sleep(60)
 
-    def save(self):
-        self.game_state.save()
+    def save(self, filename: Optional[str] = None):
+        self.game_state.save(filename)
 
 
 def main_menu(screen: Screen):
-    if os.path.exists('save.dat'):
-        save_exists = True
-    else:
-        save_exists = False
-
     while True:
-        screen.display_options("Main Menu", ["New Game", "Resume" if save_exists else ""])
-
+        screen.display_options("Main Menu", ["New Game", "Load Game"])
         c = screen.handle_keypress(None)
         if c == ord('1'):
-            # Create a new game
-            screen.display("Creating new game...")
-            game = Game.create(screen)
-            if game:
-                break
-        elif c == ord('2') and save_exists:
-            # Load the game state from a file
-            screen.display("Loading game...")
-            game = Game.load(screen, 'save.dat')
-            if game:
-                break
-
+            filename = file_browser(screen, mode="save")
+            if filename:
+                screen.display("Creating new game...")
+                game = Game.create(screen, filename=filename)
+                if game:
+                    game.save(filename)
+                    screen.temp_display(2, f"Game will be saved to {filename}")
+                    break
+        elif c == ord('2'):
+            filename = file_browser(screen, mode="open")
+            if filename:
+                screen.display(f"Loading game from {filename}...")
+                game = Game.load(screen, filename)
+                if game:
+                    break
     return game
     
 

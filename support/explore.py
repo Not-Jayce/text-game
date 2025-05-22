@@ -10,8 +10,19 @@ def explore_screen(screen: Screen, game_state: GameState):
         c = screen.handle_keypress(game_state)
         if c >= ord('1') and c <= ord(str(len(game_state.regions))):
             region_index = c - ord('1')
-            game_state.current_region = game_state.regions[region_index]
-            character_select_screen(screen, game_state)
+            selected_region = game_state.regions[region_index]
+            # Show region description and hazard level, ask for confirmation
+            while True:
+                screen.display(f"Exploring {selected_region.name}", f"{selected_region.description}", f"Hazard Level: {selected_region.hazard_level}")
+                screen.add_new_line("Press 'y' to confirm, or 'b' to return to region selection.")
+                confirm = screen.handle_keypress(game_state)
+                if confirm == ord('y'):
+                    game_state.current_region = selected_region
+                    # Character selection before entering region
+                    character_select_screen(screen, game_state)
+                    break
+                elif confirm == ord('b'):
+                    break
         elif c == ord('b'):
             break
 
@@ -21,7 +32,6 @@ def character_select_screen(screen: Screen, game_state: GameState):
     while True:
         screen.display(f"Exploring {game_state.current_region.name}",
                     game_state.current_region.description)
-        
         screen.display_options(
             f"Select up to 3 characters to explore with (1-{len(game_state.characters)}) then 'enter' to continue or 'b' to return:",
             [character.name+(" (selected)"*(character in selected_characters)) for character in game_state.characters],
@@ -42,9 +52,11 @@ def character_select_screen(screen: Screen, game_state: GameState):
             break
 
         elif c == ord('\n'):
+            if len(selected_characters) == 0:
+                screen.temp_display(2, "You must select at least one character to explore with.")
+                continue
             explore = True
             break
 
     if explore:
-        event = Event.create(game_state, game_state.current_region, selected_characters)
-        event_screen(screen, event, game_state)
+        game_state.current_region.region_screen(screen, game_state)

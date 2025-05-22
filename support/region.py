@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from support.location import Location
 from utils.llm_client import LLMClient
+from support.event import Event, event_screen
 
 class Region(BaseModel):
     name: str = Field(...)
@@ -59,3 +60,43 @@ class Region(BaseModel):
             hazard_level=random.randint(0, 4),
             locations=[],
         )
+
+    def region_screen(self, screen, game_state):
+        """
+        Displays the region screen, listing visible locations and allowing the user to select a location to visit.
+        :param screen: The Screen instance for display.
+        :param game_state: The current GameState instance.
+        """
+        while True:
+            visible_locations = [loc for loc in self.locations if loc.discovered]
+            if not visible_locations:
+                screen.display(f"No locations discovered yet in {self.name}.", f"Hazard Level: {self.hazard_level}")
+                screen.add_new_line("Press 'b' to go back.")
+                c = screen.handle_keypress(game_state)
+                if c == ord('b'):
+                    break
+                continue
+
+            options = [f"{loc.name} (Distance: {loc.distance})" for loc in visible_locations]
+            screen.display_options(f"{self.name} (Hazard Level: {self.hazard_level})\nSelect a location to visit:", options)
+            screen.add_new_line(f"Enter 1-{len(visible_locations)} to visit, or 'b' to go back.")
+            c = screen.handle_keypress(game_state)
+            if c >= ord('1') and c < ord('1') + len(visible_locations):
+                location_index = c - ord('1')
+                selected_location = visible_locations[location_index]
+                # Show location description and ask for confirmation
+                while True:
+                    screen.display(f"{selected_location.name}", f"{selected_location.description}", f"Distance: {selected_location.distance}")
+                    screen.add_new_line("Press 'y' to confirm, or 'b' to return to location selection.")
+                    confirm = screen.handle_keypress(game_state)
+                    if confirm == ord('y'):
+                        screen.temp_display(2, f"Traveling to {selected_location.name}...")
+                        characters = getattr(game_state, 'characters', [])
+                        event = Event.create(game_state, self, characters)
+                        event_screen(screen, event, game_state)
+                        break
+                    elif confirm == ord('b'):
+                        break
+            elif c == ord('b'):
+                break
+

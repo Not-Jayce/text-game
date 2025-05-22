@@ -217,6 +217,8 @@ class Screen(BaseModel):
             
             else:
                 return c
+        else:
+            raise Exception("Curses window not initialized.")
 
     def get_input(self, prompt: str, charlim: Optional[int] = None) -> str:
         """

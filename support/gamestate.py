@@ -1,6 +1,9 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 import pickle, random, logging, os, time
+
+if TYPE_CHECKING:
+    from utils.screen import Screen
 
 from support.region import Region
 from support.location import Location
@@ -8,14 +11,15 @@ from support.character import Character
 from utils.llm_client import LLMClient
 
 class GameState(BaseModel):
-    llm_client: Optional[LLMClient] = Field(None)
+    llm_client: LLMClient = Field(...)
     theme: str = Field(...)
     currency: int = Field(10)
     currency_name: str = Field("currency")
     recruitment_cost: int = Field(10)
     characters: List[Character] = Field(default_factory=list)
     regions: List[Region] = Field(default_factory=list)
-    current_region: Optional[Region] = Field(None)
+    home_base: Region = Field(...)
+    current_region: Region = Field(...)
 
     @classmethod
     def create(cls, llm_client: LLMClient, theme: str):
@@ -50,6 +54,10 @@ class GameState(BaseModel):
         location_names = llm_client.multi_generate(total_locations, "name", "location", "Generating location names", max_tokens=20)
         location_descriptions = llm_client.multi_generate(total_locations, "description", "location", "Generating location descriptions",
                                                            name=location_names, max_tokens=100)
+        
+        home_base: str = llm_client.generate("name", "home base", "Generating home base name", max_tokens=10)
+        home_base_description: str = llm_client.generate("description", "home base", "Generating home base description", name=home_base, max_tokens=100)
+        home_base_region = Region.create(llm_client, home_base, home_base_description)
 
         # Split the location names and descriptions into batches for each region
         location_index = 0
@@ -68,15 +76,16 @@ class GameState(BaseModel):
             llm_client=llm_client,
             characters=characters,
             regions=regions,
-            current_region=None,
+            current_region=home_base_region,
             theme=theme,
             currency_name=currency_name,
             currency=10,
-            recruitment_cost=10
+            recruitment_cost=10,
+            home_base=home_base_region
         )
 
     @classmethod
-    def load(cls, screen, data: bytes):
+    def load(cls, screen: "Screen", data: bytes):
         try:
             game_state: GameState = pickle.loads(data)
 
@@ -88,7 +97,7 @@ class GameState(BaseModel):
                     logging.error("Error: API key or URL not found in environment variables.")
                     time.sleep(2)
                     return None
-                game_state.llm_client = LLMClient.create(screen, game_state.theme)
+                game_state.llm_client = LLMClient.create(api_url, api_key, screen, game_state.theme)
 
             game_state.llm_client.screen = screen
             logging.info("Game state loaded successfully.")
@@ -98,9 +107,12 @@ class GameState(BaseModel):
             logging.error(f"Error loading game state: {e}")
         return game_state
     
-    def save(self):
+    def save(self, filename: Optional[str] = 'save.dat'):
+        if not filename:
+            filename = 'save.dat'
+        filename = filename if filename.endswith('.dat') else filename + '.dat'
         try:
-            with open('save.dat', 'wb') as f:
+            with open(filename, 'wb') as f:
                 f.write(pickle.dumps(self))
             logging.info("Game state saved successfully.")
         except Exception as e:
